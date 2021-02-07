@@ -18,19 +18,42 @@ namespace MeetUpPlanner.Shared
         public string ParticipantFirstName { get; set; }
         [JsonProperty(PropertyName = "participantLastName"), MaxLength(100), Required(ErrorMessage = "Nachnamen bitte eingeben.")]
         public string ParticipantLastName { get; set; }
-        [JsonProperty(PropertyName = "participantAddressName", NullValueHandling = NullValueHandling.Ignore), MaxLength(100) ]
+        [JsonProperty(PropertyName = "participantAddressName", NullValueHandling = NullValueHandling.Ignore), MaxLength(100), Required(ErrorMessage = "Bitte eine Adress-Info eingeben.")]
         public string ParticipantAdressInfo { get; set; }
         [JsonProperty(PropertyName = "checkInDate")]
         public DateTime CheckInDate { get; set; }
         [JsonProperty(PropertyName = "isGuest")]
         public Boolean IsGuest { get; set; } = false;
-        [JsonIgnore]
-        public string ParticipantDisplayName
+
+        public Participant()
         {
-            get
+
+        }
+        public Participant(string firstName, string lastName, string adressInfo)
+        {
+            ParticipantFirstName = firstName;
+            ParticipantLastName = lastName;
+            ParticipantAdressInfo = adressInfo;
+        }
+        public string ParticipantDisplayName(int nameDisplayLength)
+        {
+            StringBuilder sb = new StringBuilder();
+            if (IsGuest)
             {
-                return (IsGuest ? "Gast" : ParticipantFirstName + " " + ParticipantLastName[0] + ".");
+                sb.Append("Gast");
             }
+            else
+            { 
+                int length = nameDisplayLength > 0 ? Math.Min(nameDisplayLength, ParticipantLastName.Length) : ParticipantLastName.Length;
+                sb.Append(ParticipantFirstName).Append(" ");
+                sb.Append(ParticipantLastName.Substring(0, length));
+                if (length < ParticipantLastName.Length)
+                {
+                    sb.Append('.');
+                }
+            }
+
+            return sb.ToString();
         }
 
     }

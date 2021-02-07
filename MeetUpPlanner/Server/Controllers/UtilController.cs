@@ -20,7 +20,7 @@ namespace MeetUpPlanner.Server.Controllers
     {
         private readonly MeetUpFunctions _meetUpFunctions;
         private readonly ILogger<UtilController> logger;
-        const string serverVersion = "2020-08-25";
+        const string serverVersion = "2021-02-06";
         string functionsVersion = "tbd";
 
         public UtilController(ILogger<UtilController> logger, MeetUpFunctions meetUpFunctions)
@@ -43,6 +43,14 @@ namespace MeetUpPlanner.Server.Controllers
             functionsVersion = await _meetUpFunctions.GetVersion();
             
             return functionsVersion;
+        }
+
+        [HttpGet("tenantclientsettings")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetTenantClientSettings([FromHeader(Name = "x-meetup-tenant-url")] string tenantUrl)
+        {
+            TenantClientSettings tenantClientSettings = await _meetUpFunctions.GetTenantClientSettings(tenantUrl);
+            return Ok(tenantClientSettings);
         }
 
         [HttpGet("clientsettings")]
@@ -81,6 +89,13 @@ namespace MeetUpPlanner.Server.Controllers
         public async Task<IActionResult> WriteClientSettings([FromHeader(Name = "x-meetup-tenant")] string tenant, [FromHeader(Name = "x-meetup-keyword")] string adminKeyword, [FromBody] ClientSettings clientSettings)
         {
             await _meetUpFunctions.WriteClientSettings(tenant, adminKeyword, clientSettings);
+            return Ok();
+        }
+        [HttpPost("writenotificationsubscription")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> WriteNotificationSubscription([FromHeader(Name = "x-meetup-tenant")] string tenant, [FromHeader(Name = "x-meetup-keyword")] string keyword, [FromBody] NotificationSubscription subscription)
+        {
+            await _meetUpFunctions.WriteNotificationSubscription(tenant, keyword, subscription);
             return Ok();
         }
         [HttpGet("qrcode")]

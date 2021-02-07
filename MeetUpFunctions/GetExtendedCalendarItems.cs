@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 using MeetUpPlanner.Shared;
 using System.Web.Http;
 using System.Linq;
-using Aliencube.AzureFunctions.Extensions.OpenApi.Attributes;
+using Aliencube.AzureFunctions.Extensions.OpenApi.Core.Attributes;
 
 namespace MeetUpPlanner.Functions
 {
@@ -36,24 +36,25 @@ namespace MeetUpPlanner.Functions
         }
 
         [FunctionName("GetExtendedCalendarItems")]
-        [OpenApiOperation(Summary = "Gets the relevant ExtendedCalendarIitems",
+        [OpenApiOperation(Summary = "Gets the relevant ExtendedCalendarItems",
                           Description = "Reading current ExtendedCalendarItems (CalendarItem including correpondent participants and comments) starting in the future or the configured past (in hours). To be able to read CalenderItems the user keyword must be set as header x-meetup-keyword.")]
-        [OpenApiResponseBody(System.Net.HttpStatusCode.OK, "application/json", typeof(IEnumerable<ExtendedCalendarItem>))]
+        [OpenApiResponseWithBody(System.Net.HttpStatusCode.OK, "application/json", typeof(IEnumerable<ExtendedCalendarItem>))]
         [OpenApiParameter("privatekeywords", Description = "Holds a list of private keywords, separated by ;")]
         public async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = null)] HttpRequest req)
         {
-            _logger.LogInformation("C# HTTP trigger function GetExtendedCalendarItems processed a request.");
             string tenant = req.Headers[Constants.HEADER_TENANT];
             if (String.IsNullOrWhiteSpace(tenant))
             {
                 tenant = null;
             }
+            string tenantBadge = null == tenant ? "default" : tenant;
+            _logger.LogInformation($"GetExtendedCalendarItems for tenant <{tenantBadge}>");
             ServerSettings serverSettings = await _serverSettingsRepository.GetServerSettings(tenant);
             string keyWord = req.Headers[Constants.HEADER_KEYWORD];
             if (String.IsNullOrEmpty(keyWord) || !serverSettings.IsUser(keyWord))
             {
-                _logger.LogWarning("GetExtendedCalendarItems called with wrong keyword.");
+                _logger.LogWarning($"GetExtendedCalendarItems<{tenantBadge}> called with wrong keyword.");
                 return new BadRequestErrorMessageResult("Keyword is missing or wrong.");
             }
             string privateKeywordsString = req.Query["privatekeywords"];
@@ -80,6 +81,11 @@ namespace MeetUpPlanner.Functions
             {
                 // Create ExtendedCalendarItem and get comments and participants
                 ExtendedCalendarItem extendedItem = new ExtendedCalendarItem(item);
+                if (!serverSettings.IsAdmin(keyWord) && extendedItem.PublishDate.CompareTo(DateTime.UtcNow) > 0)
+                {
+                    // If calendar item is not ready for publishing skip it
+                    continue;
+                }
                 if (String.IsNullOrEmpty(extendedItem.PrivateKeyword))
                 {
                     // No private keyword for item ==> use it

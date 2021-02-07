@@ -17,6 +17,7 @@ namespace MeetUpPlanner.Server.Repositories
         public const string HEADER_KEYWORD = "x-meetup-keyword";
         public const string HEADER_FUNCTIONS_KEY = "x-functions-key";
         public const string HEADER_TENANT = "x-meetup-tenant";
+        public const string HEADER_TENANT_URL = "x-meetup-tenant-url";
 
         public MeetUpFunctions(MeetUpFunctionsConfig functionsConfig)
         {
@@ -33,6 +34,15 @@ namespace MeetUpPlanner.Server.Repositories
                             .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
                             .GetStringAsync();
             return version;
+        }
+        public async Task<TenantClientSettings> GetTenantClientSettings(string tenantUrl)
+        {
+            TenantClientSettings tenantClientSettings;
+            tenantClientSettings = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetTenantClientSettings"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_TENANT_URL, tenantUrl)
+                            .GetJsonAsync<TenantClientSettings>();
+            return tenantClientSettings;
         }
         public async Task<ClientSettings> GetClientSettings(string tenant)
         {
@@ -93,6 +103,26 @@ namespace MeetUpPlanner.Server.Repositories
 
             return new OkResult();
         }
+        public async Task<IActionResult> WriteNotificationSubscription(string tenant, string keyword, NotificationSubscription subscription)
+        {
+            await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/WriteNotificationSubscription"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_KEYWORD, keyword)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .PostJsonAsync(subscription );
+
+            return new OkResult();
+        }
+        public async Task<IActionResult> WriteInfoItem(string tenant, string keyword, InfoItem infoItem)
+        {
+            await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/WriteInfoItem"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_KEYWORD, keyword)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .PostJsonAsync(infoItem);
+
+            return new OkResult();
+        }
         public async Task<IEnumerable<CalendarItem>> GetCalendarItems(string tenant, string keyword, string privatekeywords)
         {
 
@@ -115,6 +145,38 @@ namespace MeetUpPlanner.Server.Repositories
                             .GetJsonAsync<IEnumerable<ExtendedCalendarItem>>();
             return calendarItems;
         }
+        public async Task<IEnumerable<ExtendedInfoItem>> GetExtendedInfoItems(string tenant, string keyword)
+        {
+            IEnumerable<ExtendedInfoItem> infoItems;
+            infoItems = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetExtendedInfoItems"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_KEYWORD, keyword)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .GetJsonAsync<IEnumerable<ExtendedInfoItem>>();
+            return infoItems;
+        }
+        public async Task<IEnumerable<ExtendedCalendarItem>> GetExtendedCalendarItemsForDate(string tenant, string keyword, string privatekeywords, string requestedDate)
+        {
+            IEnumerable<ExtendedCalendarItem> calendarItems;
+            calendarItems = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetExtendedCalendarItemsForDate"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_KEYWORD, keyword)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .SetQueryParam("privatekeywords", privatekeywords)
+                            .SetQueryParam("requesteddate", requestedDate)
+                            .GetJsonAsync<IEnumerable<ExtendedCalendarItem>>();
+            return calendarItems;
+        }
+        public async Task<IEnumerable<ExtendedCalendarItem>> GetScopedCalendarItems(string tenant, string scope)
+        {
+            IEnumerable<ExtendedCalendarItem> calendarItems;
+            calendarItems = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetScopedCalendarItems"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .SetQueryParam("scope", scope)
+                            .GetJsonAsync<IEnumerable<ExtendedCalendarItem>>();
+            return calendarItems;
+        }
         public async Task<CalendarItem> GetCalendarItem(string tenant, string keyword, string itemId)
         {
 
@@ -125,6 +187,17 @@ namespace MeetUpPlanner.Server.Repositories
                           .GetJsonAsync<CalendarItem>();
             return calendarItem;
         }
+        public async Task<InfoItem> GetInfoItem(string tenant, string keyword, string itemId)
+        {
+
+            InfoItem infoItem = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetInfoItem/{itemId}"
+                          .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                          .WithHeader(HEADER_KEYWORD, keyword)
+                          .WithHeader(HEADER_TENANT, tenant)
+                          .GetJsonAsync<InfoItem>();
+            return infoItem;
+        }
+
         public async Task<ExtendedCalendarItem> GetExtendedCalendarItem(string tenant, string keyword, string itemId)
         {
 
@@ -134,6 +207,16 @@ namespace MeetUpPlanner.Server.Repositories
                           .WithHeader(HEADER_TENANT, tenant)
                           .GetJsonAsync<ExtendedCalendarItem>();
             return calendarItem;
+        }
+        public async Task<ExtendedInfoItem> GetExtendedInfoItem(string tenant, string keyword, string itemId)
+        {
+
+            ExtendedInfoItem infoItem = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/GetExtendedInfoItem/{itemId}"
+                          .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                          .WithHeader(HEADER_KEYWORD, keyword)
+                          .WithHeader(HEADER_TENANT, tenant)
+                          .GetJsonAsync<ExtendedInfoItem>();
+            return infoItem;
         }
         public async Task<BackendResult> AddParticipantToCalendarItem(string tenant, string keyword, Participant participant)
         {
@@ -149,6 +232,18 @@ namespace MeetUpPlanner.Server.Repositories
         {
             BackendResult result;
             result = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/AddCommentToCalendarItem"
+                        .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                        .WithHeader(HEADER_KEYWORD, keyword)
+                        .WithHeader(HEADER_TENANT, tenant)
+                        .PostJsonAsync(comment)
+                        .ReceiveJson<BackendResult>();
+
+            return result;
+        }
+        public async Task<BackendResult> AddCommentToInfoItem(string tenant, string keyword, CalendarComment comment)
+        {
+            BackendResult result;
+            result = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/AddCommentToInfoItem"
                         .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
                         .WithHeader(HEADER_KEYWORD, keyword)
                         .WithHeader(HEADER_TENANT, tenant)
@@ -194,6 +289,16 @@ namespace MeetUpPlanner.Server.Repositories
                             .WithHeader(HEADER_KEYWORD, keyword)
                             .WithHeader(HEADER_TENANT, tenant)
                             .PostJsonAsync(calendarItem)
+                            .ReceiveJson<BackendResult>();
+            return result;
+        }
+        public async Task<BackendResult> DeleteInfoItem(string tenant, string keyword, InfoItem infoItem)
+        {
+            BackendResult result = await $"https://{_functionsConfig.FunctionAppName}.azurewebsites.net/api/DeleteInfoItem"
+                            .WithHeader(HEADER_FUNCTIONS_KEY, _functionsConfig.ApiKey)
+                            .WithHeader(HEADER_KEYWORD, keyword)
+                            .WithHeader(HEADER_TENANT, tenant)
+                            .PostJsonAsync(infoItem)
                             .ReceiveJson<BackendResult>();
             return result;
         }

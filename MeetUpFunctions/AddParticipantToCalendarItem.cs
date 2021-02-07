@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Web.Http;
-using Aliencube.AzureFunctions.Extensions.OpenApi.Attributes;
+using Aliencube.AzureFunctions.Extensions.OpenApi.Core.Attributes;
 using MeetUpPlanner.Shared;
 using System.Collections.Generic;
 
@@ -33,9 +33,9 @@ namespace MeetUpPlanner.Functions
 
         [FunctionName("AddParticipantToCalendarItem")]
         [OpenApiOperation(Summary = "Add a participant to the referenced CalendarItem.",
-                          Description = "If the Participants already exists (same id) it it overwritten.")]
+                          Description = "If the Participants already exists (same id) it is overwritten.")]
         [OpenApiRequestBody("application/json", typeof(Participant), Description = "New Participant to be written.")]
-        [OpenApiResponseBody(System.Net.HttpStatusCode.OK, "application/json", typeof(BackendResult), Description = "Status of operation.")]
+        [OpenApiResponseWithBody(System.Net.HttpStatusCode.OK, "application/json", typeof(BackendResult), Description = "Status of operation.")]
         public async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req)
         {
@@ -66,7 +66,7 @@ namespace MeetUpPlanner.Functions
             }
             // Get participant list to check max registrations and if caller is already registered.
             IEnumerable<Participant> participants = await _cosmosRepository.GetItems(p => p.CalendarItemId.Equals(calendarItem.Id));
-            int counter = 1;
+            int counter = calendarItem.WithoutHost ? 0 : 1;
             foreach (Participant p in participants)
             {
                 if (p.ParticipantFirstName.Equals(participant.ParticipantFirstName) && p.ParticipantLastName.Equals(participant.ParticipantLastName))
@@ -81,7 +81,7 @@ namespace MeetUpPlanner.Functions
                 // Admin can "overbook" a meetup to be able to add some extra guests
                 maxRegistrationCount *= Constants.ADMINOVERBOOKFACTOR;
             }
-            if (counter >= calendarItem.MaxRegistrationsCount)
+            if (counter >= maxRegistrationCount)
             {
                 return new OkObjectResult(new BackendResult(false, "Maximale Anzahl Registrierungen bereits erreicht."));
             }

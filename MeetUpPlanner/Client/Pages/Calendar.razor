@@ -5,8 +5,10 @@
 @inject HttpClient Http
 @inject NavigationManager NavigationManager
 @inject NotificationService notificationService
+@inject DialogService dialogService
 @inject BlazorTimer Timer
 @inject BlazorTimer Timer2
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 @using Newtonsoft.Json
 @using System.IO
@@ -15,26 +17,49 @@
 <MessageBoard Message="@AppStateStore.ClientSettings?.WhiteboardMessage" ShowLogo="false" />
 <h1>Ausfahrten</h1>
 <p>
-    <a class="btn btn-primary" href="/newmeetup">Neue Ausfahrt erstellen</a>
+    <a class="btn btn-primary" href="/newmeetup" title="Neue Ausfahrt" hidden="@(_onlyAdminsAsHost && !KeywordCheck.IsAdmin)">Neue Ausfahrt erstellen</a>
+    <button class="btn btn-primary" title="Reload" @onclick="@(() => Reload())"><span class="oi oi-reload"></span></button>
+    @if (KeywordCheck.IsAdmin)
+    {
+        <button class="btn btn-primary" @onclick="@(() => BackwardSelectedDate())" title="Vorheriger Tag"><span class="oi oi-media-step-backward"></span></button>
+        @if (ShowHistory())
+        {
+            <button class="btn btn-primary" @onclick="@(() => ForwardSelectedDate())" title="Nächster Tag"><span class="oi oi-media-step-forward"></span></button>
+        }
+    }
+    <a class="btn btn-primary" title="Hilfe" href="@AppStateStore.ClientSettings?.HelpLink" target="_blank"><span class="oi oi-question-mark"></span></a>
 </p>
 <div class="row">
     <div class="col">
-        <div class="form-group">
-            <input type="text" class="form-control" aria-describedby="checkinCommentHelp" id="checkinComment" @bind="checkinComment.Comment" title="Kommentar zur Anmeldung" placeholder="Kommentar zur Anmeldung z.B. 'Ab Therme'" />
-            <small id="checkinCommentHelp" class="form-text text-muted">
-                Optional: Bei der Anmeldung zu einer Ausfahrt direkt einen Kommentar eingeben.
-            </small>
-        </div>
+        @if (ShowHistory())
+        {
+            <span>@selectedDate.ToString("D")</span>
+        }
+        else
+        {
+            <div class="form-group">
+                <input type="text" class="form-control" aria-describedby="checkinCommentHelp" id="checkinComment" @bind="checkinComment.Comment" title="Kommentar zur Anmeldung" placeholder="Kommentar zur Anmeldung" />
+                <small id="checkinCommentHelp" class="form-text text-muted">
+                    Optional: Bei der Anmeldung zu einer Ausfahrt direkt einen Kommentar eingeben.
+                </small>
+            </div>
+        }
     </div>
 </div>
 
 <div class="row">
     @foreach (ExtendedCalendarItem item in calendarItems)
     {
-        <div class="col col-lg-4 col-md-6 col-sm-12 mt-2">
+        <div class="col-12 col-sm-6 col-lg-4 col-xl-4 mt-2">
             <div class="card">
                 <div class="card-header">
-                    <em>@item.GetStartDateAsString() - @item.Place</em>
+                    <em>
+                        @item.GetStartDateAsString() - @item.Place
+                        @if (!String.IsNullOrEmpty(item.DirectionsLink))
+                        {
+                            <a href="@item.DirectionsLink" class="btn btn-outline-success btn-sm" role="button" target="_blank" tite="Startort"><span class="oi oi-map-marker"></span></a>
+                        }
+                    </em>
                     @if (!String.IsNullOrEmpty(item.PrivateKeyword))
                     {
                         <span class="badge badge-danger"><span class="oi oi-key" title="Private Ausfahrt"></span> @item.PrivateKeyword</span>
@@ -49,49 +74,100 @@
                     }
                 </div>
                 <div class="card-body">
-                    <div class="card-text">
-                        <h6 class="text-muted">@item.LevelDescription - @item.Tempo</h6>
-                        <h4 class="card-title">@item.Title</h4>
-                        @if (!String.IsNullOrEmpty(item.Link))
+                    <h6 class="text-muted card-subtitle mb-2">
+                        @item.LevelDescription - @item.Tempo
+                    </h6>
+                    <h4 class="card-title">
+                        @item.Title
+                        @if (item.IsCanceled)
                         {
-                            <div><small><a href="@item.Link" target="_blank">@item.Link</a></small></div>
+                            <span class="badge badge-danger" title="Abgesagt">Abgesagt!</span>
                         }
+                    </h4>
+                    <p class="card-text">
                         @((MarkupString)item.Summary)
+                        @if (KeywordCheck.IsAdmin && item.PublishDate.ToLocalTime().CompareTo(DateTime.Now) > 0)
+                        {
+                            <small><em>Veröffentlichung @item.GetPublishDateAsString()</em></small>
+                        }
+                        @if (!String.IsNullOrEmpty(item.GuestScope))
+                        {
+                            <div>
+                                <small><em>Gäste-Link <a href="/guests/@item.GuestScope" target="_blank">/guests/@item.GuestScope</a></em></small>
+                            </div>
+                        }
                         <hr />
-                        <small>Dabei (@item.ParticipantCounter von @item.MaxRegistrationsCount): <b>@item.HostDisplayName</b>@item.ParticipantsDisplay</small>
+                        <small>Dabei (@item.ParticipantCounter von @item.MaxRegistrationsCount)</small>
+                        @if (item.ParticipantCounter < item.MinRegistrationsCount)
+                        {
+                            <span class="badge badge-danger" title="Mindestteilnehmerzahl">Min @item.MinRegistrationsCount</span>
+                        }
+                        <small>: <b>@item.HostDisplayName(AppStateStore.ClientSettings.NameDisplayLength)</b>@item.ParticipantsDisplay(AppStateStore.ClientSettings.NameDisplayLength)</small>
                         <hr />
-                        <ul class="list-unstyled">
-                            @foreach (CalendarComment c in item.CommentsList)
-                            {
-                                <li><small><em>@c.AuthorDisplayName (@c.DisplayDate): </em>@c.Comment</small></li>
-                            }
-                        </ul>
-                    </div>
+                        @if (item.CommentsList.Count() > 0)
+                        {
+                            <ul class="list-unstyled">
+                                @foreach (CalendarComment c in item.CommentsList)
+                                {
+                                    <li>
+                                        <small>
+                                            <em>@c.AuthorDisplayName(AppStateStore.ClientSettings.NameDisplayLength) (@c.DisplayDate): </em>@c.Comment
+                                            @if (!String.IsNullOrEmpty(c.Link))
+                                            {
+                                                <text> </text><a title="@c.DisplayLinkTitle" target="_blank" href="@c.Link">@c.DisplayLinkTitle</a>
+                                            }
+                                        </small>
+                                    </li>
+                                }
+                            </ul>
+                            <hr />
+                        }
+                    </p>
+                    @if (!String.IsNullOrEmpty(item.Link))
+                    {
+                        <a href="@item.Link" target="_blank" class="card-link">@item.DisplayLinkTitle</a>
+                    }
                 </div>
                 <div class="card-footer">
-                    <div class="btn-group">
-                        @if (CheckIfUserIsHost(item) || KeywordCheck.IsAdmin)
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" title="Ändern" @onclick="@(() => EditCalendarItem(item.Id))"><span class="oi oi-pencil"></span></button>
-                            <button class="btn btn-sm btn-outline-secondary" title="Löschen" @onclick="@(() => DeleteCalendarItem(item))"><span class="oi oi-trash"></span></button>
-                        }
-                        <button class="btn btn-sm btn-outline-secondary" title="Kommentieren" @onclick="@(() => ShowComment(item))"><span class="oi oi-comment-square"></span></button>
-                        @if ((CheckIfUserIsHost(item) || KeywordCheck.IsAdmin) && item.ParticipantCounter > 1)
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" title="Neuer Guide" @onclick="@(() => AssignNewHost(item))"><span class="oi oi-share-boxed"></span></button>
-                        }
-                        @if (!CheckIfUserIsHost(item))
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" title="Anmelden" hidden="@CheckIfUserIsAlreadyRegistered(item)" @onclick="@(() => Checkin(item.Id))">Anmelden</button>
-                            <button class="btn btn-sm btn-outline-secondary" title="Abmelden" hidden="@(!CheckIfUserIsAlreadyRegistered(item))" @onclick="@(() => Checkout(item))">Abmelden</button>
-                        }
-                        @if (AppStateStore.ClientSettings.GuestsEnabled)
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" title="Gast einladen" @onclick="@(() => Invite(item))">Gast einladen</button>
-                        }
+                    <div class="btn-toolbar" role="toolbar" aria-label="Aktionen zur Ausfahrt">
+                        <div class="btn-group mr-2" role="group" aria-label="Ändern">
+                            @if (CheckIfUserIsHost(item) || KeywordCheck.IsAdmin)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" title="Ändern" @onclick="@(() => EditCalendarItem(item.Id))"><span class="oi oi-pencil"></span></button>
+                                <button class="btn btn-sm btn-outline-secondary" title="Kopieren" @onclick="@(() => ConfirmClone(item))"><span class="oi oi-fork"></span></button>
+                                <button class="btn btn-sm btn-outline-secondary" title="Löschen" @onclick="@(() => DeleteCalendarItem(item))"><span class="oi oi-trash"></span></button>
+                                <button class="btn btn-sm btn-outline-secondary" title="Absagen" @onclick="@(() => CancelMeetUp(item))"><span class="oi oi-x"></span></button>
+                                @if (item.ParticipantCounter > 1)
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary" title="Neuer Guide" @onclick="@(() => AssignNewHost(item))"><span class="oi oi-share-boxed"></span></button>
+                                }
+                            }
+                        </div>
+                        <div class="btn-group mr-2" role="group" aria-label="Teilnehmen">
+                            <button class="btn btn-sm btn-outline-secondary" title="Kommentieren" @onclick="@(() => ShowComment(item))"><span class="oi oi-comment-square"></span></button>
+                            @if (AppStateStore.ClientSettings.GuestsEnabled && !ShowHistory())
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" title="Gast einladen" @onclick="@(() => Invite(item))"><span class="oi oi-external-link"></span></button>
+                            }
+                            @if (CheckIfUserIsHost(item) || KeywordCheck.IsAdmin)
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" title="Andere an/abmelden" @onclick="@(() => RegisterOthers(item))"><span class="oi oi-transfer"></span></button>
+                            }
+                            @if (!CheckIfUserIsHost(item) && !ShowHistory())
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" title="Anmelden" hidden="@(CheckIfUserIsAlreadyRegistered(item) || item.IsCanceled)" @onclick="@(() => Checkin(item.Id))">Anmelden</button>
+                                <button class="btn btn-sm btn-outline-secondary" title="Abmelden" hidden="@(!CheckIfUserIsAlreadyRegistered(item))" @onclick="@(() => Checkout(item))">Abmelden</button>
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
+        </div>
+    }
+    @foreach (ExtendedInfoItem infoItem in infoItems)
+    {
+        <div class="col-12 col-sm-6 col-lg-4 col-xl-4 mt-2">
+            <InfoCard InfoItem="@infoItem" IsAdmin="@KeywordCheck.IsAdmin" OnChangeCallback="@(e => ReadData())"></InfoCard>
         </div>
     }
 </div>
@@ -99,24 +175,45 @@
 @code {
     private CalendarComment checkinComment = new CalendarComment();
     private IList<ExtendedCalendarItem> calendarItems = new List<ExtendedCalendarItem>();
+    private IList<ExtendedInfoItem> infoItems = new List<ExtendedInfoItem>();
     const double refreshInterval = 30000;
     const double navigateAwayInterval = 10 * 60 * 1000;
     private HubConnection hubConnection;
+    private ExtendedCalendarItem calendarItemToBeCloned = null;
+    private DateTime selectedDate = DateTime.Today;
+    private Boolean _onlyAdminsAsHost = false;
 
     protected override async Task OnInitializedAsync()
     {
         if (null != AppStateStore && !String.IsNullOrEmpty(AppStateStore.KeyWord))
         {
+            _onlyAdminsAsHost = AppStateStore.ClientSettings.OnlyAdminsAsHost;
             hubConnection = new HubConnectionBuilder()
                 .WithUrl(NavigationManager.ToAbsoluteUri("/broadcastHub"))
-                .WithAutomaticReconnect()
                 .Build();
 
             hubConnection.On("ReceiveMessage", () =>
             {
-                CallReadData();
-                StateHasChanged();
+                try
+                {
+                    CallReadData();
+                    StateHasChanged();
+                }
+                catch (Exception)
+                {
+                }
             });
+            hubConnection.Closed += async (error) =>
+            {
+                await Task.Delay(new Random().Next(0, 5) * 1000);
+                try
+                {
+                    await hubConnection.StartAsync();
+                }
+                catch (Exception)
+                {
+                }
+            };
 
             await hubConnection.StartAsync();
 
@@ -127,6 +224,9 @@
             //Timer2.OnElapsed += NavigateAwayHandler;
 
             await ReadData();
+            dialogService.OnClose += CloneConfirmed;
+
+            await RequestNotificationSubscriptionAsync();
         }
         else
         {
@@ -139,8 +239,46 @@
         string privateKeywords = AppStateStore.PrivateKeyWord1 + ";" + AppStateStore.PrivateKeyWord2 + ";" + AppStateStore.PrivateKeyWord3; ;
         // Get list of calendar items
         PrepareHttpClient();
-        calendarItems = await Http.GetFromJsonAsync<IList<ExtendedCalendarItem>>($"calendar/extendedcalendaritems?privatekeywords={privateKeywords}");
+        try
+        {
+            if (!ShowHistory())
+            {
+                calendarItems = await Http.GetFromJsonAsync<IList<ExtendedCalendarItem>>($"calendar/extendedcalendaritems?privatekeywords={privateKeywords}");
+            }
+            else
+            {
+                string dateArg = selectedDate.ToString("yyyy-MM-dd");
+                calendarItems = await Http.GetFromJsonAsync<IList<ExtendedCalendarItem>>($"calendar/extendedcalendaritemsfordate?privatekeywords={privateKeywords}&requesteddate={dateArg}");
+            }
+            infoItems = await Http.GetFromJsonAsync<IList<ExtendedInfoItem>>($"api/info/extendedinfoitems");
+        }
+        catch (Exception ex)
+        {
+            notificationService.Notify(new NotificationMessage()
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Offline",
+                Detail = $"Momentan gibt es keine Netzverbindung oder die Anwendung offline. Fehlermeldung: {ex.Message}",
+                Duration = 4000
+            });
+        }
         StateHasChanged();
+    }
+    protected async Task Reload()
+    {
+
+        try
+        {
+            if (null != hubConnection && hubConnection.State == HubConnectionState.Disconnected)
+            {
+                await hubConnection.StartAsync();
+            }
+        }
+        catch (Exception)
+        {
+        }
+        selectedDate = DateTime.Today;
+        await ReadData();
     }
     private void CallReadData()
     {
@@ -153,6 +291,55 @@
     protected void EditCalendarItem(string itemId)
     {
         NavigationManager.NavigateTo($"/NewMeetUp/{itemId}");
+    }
+
+    protected void ConfirmClone(ExtendedCalendarItem c)
+    {
+        calendarItemToBeCloned = c;
+        dialogService.Confirm("Termin für nächste Woche kopieren?", "Termin kopieren", new ConfirmOptions() { OkButtonText = "Ja", CancelButtonText = "Nein" });
+    }
+
+    protected async void CloneConfirmed(dynamic result)
+    {
+        bool? removeIt = result;
+        if (null != removeIt && null != calendarItemToBeCloned)
+        {
+            if ((bool)removeIt)
+            {
+                await CloneCalendarItem(calendarItemToBeCloned);
+            }
+        }
+        calendarItemToBeCloned = null;
+    }
+
+
+    protected async Task CloneCalendarItem(ExtendedCalendarItem calendarItem)
+    {
+        calendarItem.Id = null; // to create a new one
+        calendarItem.StartDate = calendarItem.StartDate.AddDays(7.0);
+        calendarItem.IsCanceled = false;
+        if (KeywordCheck.IsAdmin)
+        {
+            calendarItem.PublishDate = calendarItem.PublishDate.AddDays(7.0);
+        }
+        PrepareHttpClient();
+        // Save calendarItem server
+        await Http.PostAsJsonAsync<CalendarItem>($"Calendar/writecalendaritem", calendarItem);
+        if (IsConnected) await SendMessage();
+        await ReadData();
+    }
+    protected async Task CancelMeetUp(ExtendedCalendarItem calendarItem)
+    {
+        calendarItem.IsCanceled = !calendarItem.IsCanceled;
+        PrepareHttpClient();
+        // Save calendarItem server
+        await Http.PostAsJsonAsync<CalendarItem>($"Calendar/writecalendaritem", calendarItem);
+        if (IsConnected) await SendMessage();
+        if (calendarItem.IsCanceled)
+        {
+            notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Success, Summary = "Abgesagt", Detail = "Um die Absage rückgänig zu machen, einfach noch einmal den Button drücken.", Duration = 4000 });
+        }
+        //await ReadData();
     }
 
     protected async Task Checkin(string itemId)
@@ -181,7 +368,6 @@
             notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Success, Summary = "Angemeldet", Detail = "Du bist jetzt angemeldet. Falls du doch nicht dabei sein kannst, melde dich bitte wieder ab.", Duration = 4000 });
             // Read data again
             await ReadData();
-            StateHasChanged();
         }
         else
         {
@@ -202,7 +388,6 @@
         {
             if (IsConnected) await SendMessage();
             await ReadData();
-            StateHasChanged();
         }
         else
         {
@@ -216,7 +401,7 @@
     }
     protected bool CheckIfUserIsHost(ExtendedCalendarItem calendarItem)
     {
-        bool isHost = (calendarItem.HostFirstName.Equals(AppStateStore.FirstName) && calendarItem.HostLastName.Equals(AppStateStore.LastName));
+        bool isHost = !calendarItem.WithoutHost && (calendarItem.HostFirstName.Equals(AppStateStore.FirstName) && calendarItem.HostLastName.Equals(AppStateStore.LastName));
         return isHost;
     }
     private async void TimerElapsedHandler()
@@ -237,6 +422,10 @@
     {
         NavigationManager.NavigateTo($"/Invite/{calendarItem.Id}");
     }
+    protected void RegisterOthers(ExtendedCalendarItem calendarItem)
+    {
+        NavigationManager.NavigateTo($"/RegisterOthers/{calendarItem.Id}");
+    }
     protected void DeleteCalendarItem(ExtendedCalendarItem calendarItem)
     {
         NavigationManager.NavigateTo($"/ConfirmDelete/{calendarItem.Id}");
@@ -247,7 +436,17 @@
     }
     public void Dispose()
     {
-        _ = hubConnection.DisposeAsync();
+        if (null != hubConnection)
+        {
+            try
+            {
+                _ = hubConnection.DisposeAsync();
+            }
+            catch (Exception)
+            {
+
+            }
+        }
         // only if Timer is used instead of SignalR
         // Timer.DisableTimer();
         // Timer2.DisableTimer();
@@ -290,11 +489,11 @@
 
     private void PrepareHttpClient()
     {
-        if (null != AppStateStore.Tenant?.Name)
+        if (null != AppStateStore.Tenant?.TenantKey)
         {
             if (!Http.DefaultRequestHeaders.Contains("x-meetup-tenant"))
             {
-                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.Name);
+                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.TenantKey);
             }
         }
         if (!Http.DefaultRequestHeaders.Contains("x-meetup-keyword"))
@@ -303,5 +502,48 @@
         }
 
     }
+    private bool ShowHistory()
+    {
+        return selectedDate.CompareTo(DateTime.Today) < 0;
+    }
+
+    private async Task ForwardSelectedDate()
+    {
+        selectedDate = selectedDate.AddDays(1.0);
+        await ReadData();
+    }
+    private async Task BackwardSelectedDate()
+    {
+        selectedDate = selectedDate.AddDays(-1.0);
+        await ReadData();
+    }
+
+    async Task RequestNotificationSubscriptionAsync()
+    {
+        if (AppStateStore.NotificationSubscriptionRequested)
+        {
+            return;
+        }
+        try
+        {
+            AppStateStore.NotificationSubscriptionRequested = true;
+            var subscription = await JSRuntime.InvokeAsync<NotificationSubscription>("blazorPushNotifications.requestSubscription");
+            if (null != subscription)
+            {
+                subscription.UserFirstName = AppStateStore.FirstName;
+                subscription.UserLastName = AppStateStore.LastName;
+                subscription.PlannerUrl = Http.BaseAddress.ToString();
+                PrepareHttpClient();
+                await Http.PostAsJsonAsync<NotificationSubscription>($"util/writenotificationsubscription", subscription);
+            }
+        }
+        catch (Exception)
+        {
+            // no push messages supported
+            // notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Error, Summary = "Fehler", Detail = ex.Message, Duration = 4000 });
+        }
+    }
 
 }
+
+

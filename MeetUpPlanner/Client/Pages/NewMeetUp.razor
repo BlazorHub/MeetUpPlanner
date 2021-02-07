@@ -2,6 +2,7 @@
 @page "/newmeetup/{ItemId}"
 @inject HttpClient Http
 @inject AppState AppStateStore
+@inject KeywordCheck KeywordCheck
 @inject NavigationManager NavigationManager
 @inject NotificationService notificationService
 @using Microsoft.AspNetCore.SignalR.Client
@@ -76,7 +77,14 @@
         <label for="place">Startort</label>
         <InputText id="place" aria-describedby="placeHelp" class="form-control" @bind-Value="meetup.Place" autocomplete="on" placeholder="Startpunkt der Ausfahrt" />
         <small id="placeHelp" class="form-text text-muted">
-            Treffpunkt der Gruppe für die Ausfahrt, z.B. "Torburg", "Therme", "Unibib", "Mexikaner Merowinger"
+            Treffpunkt der Gruppe für die Ausfahrt.
+        </small>
+    </div>
+    <div class="form-group">
+        <label for="link">Link zum Startort</label>
+        <InputText id="directionsLink" aria-describedby="directionsLinkHelp" class="form-control" @bind-Value="meetup.DirectionsLink" placeholder="URL" title="Link zum Startort" />
+        <small id="directionsLinkHelp" class="form-text text-muted">
+            Optional: Link zum Startort, z.B. Google Maps, Bing usw.
         </small>
     </div>
     <div class="form-group">
@@ -90,7 +98,7 @@
         <label for="tempo">Tempo</label>
         <InputText id="tempo" aria-describedby="tempoHelp" class="form-control" @bind-Value="meetup.Tempo" autocomplete="on" placeholder="Geplante Geschwindigkeit" />
         <small id="tempoHelp" class="form-text text-muted">
-            Geschwindigkeit als "Latte", "Cappuccino", "Espresso" oder auch km/h Angabe
+            Hinweise zur Geschwindigkeit.
         </small>
     </div>
     <div class="form-group">
@@ -112,10 +120,62 @@
         </small>
     </div>
     <div class="form-group">
+        <label for="linkTitle">Link-Bezeichnung</label>
+        <InputText id="linkTitle" aria-describedby="linkTitleHelp" class="form-control" @bind-Value="meetup.LinkTitle" placeholder="Kurze Überschrift zum Link" title="Bezeichnung des Links zur weiterern Streckeninfo" />
+        <small id="linkTitleHelp" class="form-text text-muted">
+            Optional: Kurze Bezeichnung zu dem Link oben, falls der Standardtext "Tour auf Komoot" oder "Weitere Info ..." nicht passt.
+        </small>
+    </div>
+    @if (KeywordCheck.IsAdmin)
+    {
+        <div class="form-row">
+            <div class="form-group col-md-3">
+                <label for="publishDate">Veröffentlichung</label>
+                <InputDate id="publishDate" aria-describedby="publishDateHelp" class="form-control" @bind-Value="publishDate" title="Veröffentlichung" />
+                <small id="publishDateHelp" class="form-text text-muted">
+                    Wann soll der Termin veröffentlicht werden?
+                </small>
+            </div>
+            <div class="form-group col-md-3">
+                <label for="publishTime">Uhrzeit</label>
+                <input type="time" class="form-control" @bind="@publishTime" title="Uhrzeit Veröffentlichung" />
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="form-check">
+                <InputCheckbox id="withoutHost" aria-describedby="crossHelp" class="form-check-input" @bind-Value="meetup.WithoutHost" />
+                <label for="withoutHost" class="form-checklabel">
+                    Ausfahrt ohne Guide eintragen?
+                </label>
+            </div>
+            <small id="crossHelp" class="form-text text-muted">
+                Für Termine ohne Guide, z.B. wiederkehrende Ausfahrten.
+            </small>
+        </div>
+        <div class="form-group">
+            <div class="form-check">
+                <InputCheckbox id="weekly" aria-describedby="weeklyHelp" class="form-check-input" @bind-Value="meetup.Weekly" />
+                <label for="weekly" class="form-checklabel">
+                    Soll die Ausfahrt automatisch in der nächsten Woche wiederholt werden?
+                </label>
+            </div>
+            <small id="weeklyHelp" class="form-text text-muted">
+                Falls markiert wird die Ausfahrt immer in die nächste Woche kopiert. Über das Veröffentlichungsdatum wird gesteuert, wann die Ausfahrt für alle sichtbar wird.
+            </small>
+        </div>
+    }
+    <div class="form-group">
         <label for="size">Max. Gruppengröße</label>
-        <RadzenNumeric id="size" aria-describedby="sizeHelp" class="form-control" TValue="int" Min="2" Max="@AppStateStore.ClientSettings.MaxGroupSize" @bind-Value="meetup.MaxRegistrationsCount" />
+        <RadzenNumeric id="size" aria-describedby="sizeHelp" class="form-control" TValue="int" Min="0" Max="@AppStateStore.ClientSettings?.GetMaxGroupSize(KeywordCheck.IsAdmin)" @bind-Value="meetup.MaxRegistrationsCount" />
         <small id="sizeHelp" class="form-text text-muted">
-            Hier kann die Größe der Gruppe entsprechend beschränkt werden. Maximale Gruppengröße ist momentan @(AppStateStore.ClientSettings?.MaxGroupSize).
+            Hier kann die Größe der Gruppe entsprechend beschränkt werden. Maximale Gruppengröße ist momentan @(AppStateStore.ClientSettings?.GetMaxGroupSize(KeywordCheck.IsAdmin)).
+        </small>
+    </div>
+    <div class="form-group">
+        <label for="size">Mindestteilnehmerzahl</label>
+        <RadzenNumeric id="minSize" aria-describedby="sizeHelp" class="form-control" TValue="int" Min="0" Max="@AppStateStore.ClientSettings?.GetMaxGroupSize(KeywordCheck.IsAdmin)" @bind-Value="meetup.MinRegistrationsCount" />
+        <small id="sizeHelp" class="form-text text-muted">
+            Optional: Gewünschte Mindestteilnehmerzahl der Gruppe. Dies wird entsprechend angezeigt, hat aber ansonsten keine Konsequenzen, d.h. es wird kein Termin automatisch abgesagt oder gelöscht ...
         </small>
     </div>
     <div class="form-group">
@@ -125,8 +185,18 @@
             Falls die Ausfahrt "privat" sein soll, hier ein Schlüsselwort festlegen und den potentiellen Mitfahrern separat mitteilen.
         </small>
     </div>
+    @if (AppStateStore.ClientSettings.GuestsEnabled)
+    { 
+        <div class="form-group">
+            <label for="guestScope">"Scope" für Gäste</label>
+            <InputText id="guestScope" aria-describedby="guestScopeHelp" class="form-control" @bind-Value="meetup.GuestScope" autocomplete="on" placeholder="Kürzel, das im Gäste-Link verwendet wird." />
+            <small id="guestScopeHelp" class="form-text text-muted">
+                Über den "Scope" können Ausfahrten für Gäste zusammen gefasst werden und sind dann über einen Link der Form ".../guests/scope" erreichbar.
+            </small>
+        </div>
+    }
     <ValidationSummary />
-    <button type="submit" id="BtnSave" class="btn btn-primary">Termin speichern ...</button>
+    <button type="submit" id="BtnSave" disabled="@saveDisabled" class="btn btn-primary">Termin speichern ...</button>
     <button type="reset" id="BtnCancel" class="btn btn-secondary" @onclick="@(() => OnCancel())">Zurück ohne Speichern</button>
 </EditForm>
 
@@ -134,17 +204,21 @@
     [Parameter]
     public string ItemId { get; set; }
     private HubConnection hubConnection;
-    CalendarItem meetup = new CalendarItem();
-    string whenDateString;
+    ExtendedCalendarItem meetup = new ExtendedCalendarItem();
+    string whenDateString = String.Empty;
     DateTime whenTime = DateTime.Now;
     DateTime whenDate = DateTime.Now;
+    DateTime publishTime = DateTime.Now.AddHours(-1.0);
+    DateTime publishDate = DateTime.Now;
     BlazoredTextEditor htmlDescription;
     bool onlyScopedMeetUps = false;
     private List<KeyValuePair<string, string>> scopedDates = new List<KeyValuePair<string, string>>();
+    private bool saveDisabled = false;
+    private bool withoutHost = false;
 
     protected override async Task OnInitializedAsync()
     {
-        if (null != AppStateStore && !String.IsNullOrEmpty(AppStateStore.KeyWord))
+        if (null != AppStateStore && !String.IsNullOrEmpty(AppStateStore.KeyWord) && null != AppStateStore.Tenant && !(AppStateStore.ClientSettings.OnlyAdminsAsHost && !KeywordCheck.IsAdmin))
         {
             hubConnection = new HubConnectionBuilder()
                  .WithUrl(NavigationManager.ToAbsoluteUri("/broadcastHub"))
@@ -158,7 +232,8 @@
             {
                 PrepareHttpClient();
                 // Get referenced calendar item
-                meetup = await Http.GetFromJsonAsync<CalendarItem>($"Calendar/calendaritem?itemId={ItemId}");
+                meetup = await Http.GetFromJsonAsync<ExtendedCalendarItem>($"Calendar/extendedcalendaritem?itemId={ItemId}");
+                withoutHost = meetup.WithoutHost;
             }
             else
             {
@@ -183,6 +258,9 @@
             whenDate = meetup.StartDate;
             whenTime = meetup.StartDate;
             whenDateString = meetup.StartDate.ToString("yyyy-MM-dd");
+            publishDate = meetup.PublishDate.ToLocalTime();
+            publishTime = meetup.PublishDate.ToLocalTime();
+            withoutHost = meetup.WithoutHost;
         }
         else
         {
@@ -192,7 +270,7 @@
 
     private async Task OnSave()
     {
-        if (meetup.MaxRegistrationsCount > AppStateStore.ClientSettings.MaxGroupSize)
+        if (meetup.MaxRegistrationsCount > AppStateStore.ClientSettings.GetMaxGroupSize(KeywordCheck.IsAdmin))
         {
             notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Error, Summary = "Gruppengröße", Detail = "Max. Gruppengröße überschritten.", Duration = 4000 });
             return;
@@ -202,17 +280,75 @@
             whenDate = DateTime.Parse(whenDateString);
         }
         meetup.StartDate = new DateTime(whenDate.Year, whenDate.Month, whenDate.Day, whenTime.Hour, whenTime.Minute, whenTime.Second);
-        if (meetup.StartDate.CompareTo(DateTime.Now.AddHours(-3.0)) < 0)
+        if (meetup.StartDate.CompareTo(DateTime.Now.AddHours(-5.0)) < 0)
         {
             notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Error, Summary = "Startdatum", Detail = "Bitte Startdatum korrigieren.", Duration = 4000 });
             return;
         }
+        if (saveDisabled)
+        {
+            return;
+        }
+        saveDisabled = true;
+        if (KeywordCheck.IsAdmin)
+        {
+            meetup.PublishDate = new DateTime(publishDate.Year, publishDate.Month, publishDate.Day, publishTime.Hour, publishTime.Minute, publishTime.Second).ToUniversalTime();
+        }
         meetup.Summary = await htmlDescription.GetHTML();
+        if (!String.IsNullOrWhiteSpace(meetup.PrivateKeyword))
+        {
+            meetup.PrivateKeyword = meetup.PrivateKeyword.Trim();
+            // Check if the private keyword is set in session state.
+            bool privateKeyWordSet = meetup.PrivateKeyword.Equals(AppStateStore.PrivateKeyWord1);
+            if (!privateKeyWordSet) privateKeyWordSet = meetup.PrivateKeyword.Equals(AppStateStore.PrivateKeyWord2);
+            if (!privateKeyWordSet) privateKeyWordSet = meetup.PrivateKeyword.Equals(AppStateStore.PrivateKeyWord3);
+            if (!privateKeyWordSet)
+            {
+                if (String.IsNullOrEmpty(AppStateStore.PrivateKeyWord1))
+                {
+                    AppStateStore.PrivateKeyWord1 = meetup.PrivateKeyword;
+                }
+                else if (String.IsNullOrEmpty(AppStateStore.PrivateKeyWord2))
+                {
+                    AppStateStore.PrivateKeyWord2 = meetup.PrivateKeyword;
+                }
+                else
+                {
+                    AppStateStore.PrivateKeyWord3 = meetup.PrivateKeyword;
+                }
+            }
+        }
+        Participant participantToBeRemoved = null;
+        Participant participantToBeAdded = null;
+        // Check if host-status has been changed
+        if (withoutHost && !meetup.WithoutHost)
+        {
+            // MeetUp was changed to have a host ==> assign current user as host
+            meetup.HostFirstName = AppStateStore.FirstName;
+            meetup.HostLastName = AppStateStore.LastName;
+            meetup.HostAdressInfo = AppStateStore.PhoneMail;
+            // Check if current user (and new host) is already registered and remove him
+            participantToBeRemoved = meetup.FindParticipant(meetup.HostFirstName, meetup.HostLastName);
+        }
+        else if (!withoutHost && meetup.WithoutHost)
+        {
+            // MeetUp was changed to have no host ==> add current host as participant
+            participantToBeAdded = new Participant(meetup.HostFirstName, meetup.HostLastName, meetup.HostAdressInfo);
+            participantToBeAdded.CalendarItemId = meetup.Id;
+        }
         PrepareHttpClient();
         // Save calendarItem server
         await Http.PostAsJsonAsync<CalendarItem>($"Calendar/writecalendaritem", meetup);
-        if (IsConnected) await SendMessage();
+        if (null != participantToBeRemoved)
+        {
+            await Http.PostAsJsonAsync<Participant>($"Calendar/removeparticipant", participantToBeRemoved);
+        }
+        if (null != participantToBeAdded)
+        {
+            await Http.PostAsJsonAsync<Participant>($"Calendar/addparticipant", participantToBeAdded);
+        }
 
+        if (IsConnected) await SendMessage();
 
         NavigationManager.NavigateTo("/calendar");
     }
@@ -226,7 +362,10 @@
 
     public void Dispose()
     {
-        _ = hubConnection.DisposeAsync();
+        if (null != hubConnection)
+        {
+            _ = hubConnection.DisposeAsync();
+        }
     }
     private List<KeyValuePair<string, string>> GetScopedDays()
     {
@@ -238,43 +377,43 @@
             switch (currentDate.DayOfWeek)
             {
                 case DayOfWeek.Monday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.MondayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.MondayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.MondayBadge));
                     }
                     break;
                 case DayOfWeek.Tuesday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.TuesdayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.TuesdayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.TuesdayBadge));
                     }
                     break;
                 case DayOfWeek.Wednesday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.WednesdayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.WednesdayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.WednesdayBadge));
                     }
                     break;
                 case DayOfWeek.Thursday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.ThursdayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.ThursdayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.ThursdayBadge));
                     }
                     break;
                 case DayOfWeek.Friday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.FridayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.FridayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.FridayBadge));
                     }
                     break;
                 case DayOfWeek.Saturday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.SaturdayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.SaturdayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.SaturdayBadge));
                     }
                     break;
                 case DayOfWeek.Sunday:
-                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings.SundayBadge))
+                    if (!String.IsNullOrEmpty(AppStateStore.ClientSettings?.SundayBadge))
                     {
                         scopedDays.Add(new KeyValuePair<string, string>(currentDate.ToString("yyyy-MM-dd"), currentDate.ToString("dd.MM") + " - " + AppStateStore.ClientSettings.SundayBadge));
                     }
@@ -286,11 +425,11 @@
     }
     private void PrepareHttpClient()
     {
-        if (null != AppStateStore.Tenant.Name)
+        if (null != AppStateStore.Tenant.TenantKey)
         {
             if (!Http.DefaultRequestHeaders.Contains("x-meetup-tenant"))
             {
-                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.Name);
+                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.TenantKey);
             }
         }
         if (!Http.DefaultRequestHeaders.Contains("x-meetup-keyword"))

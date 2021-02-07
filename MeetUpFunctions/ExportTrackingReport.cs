@@ -11,7 +11,7 @@ using Newtonsoft.Json;
 using MeetUpPlanner.Shared;
 using System.Web.Http;
 using System.Linq;
-using Aliencube.AzureFunctions.Extensions.OpenApi.Attributes;
+using Aliencube.AzureFunctions.Extensions.OpenApi.Core.Attributes;
 using System.Collections;
 
 namespace MeetUpPlanner.Functions
@@ -24,7 +24,7 @@ namespace MeetUpPlanner.Functions
         private CosmosDBRepository<Participant> _participantRepository;
         private CosmosDBRepository<ExportLogItem> _logRepository;
 
-        public ExportTrackingReport(ILogger<GetExtendedCalendarItems> logger, 
+        public ExportTrackingReport(ILogger<ExportTrackingReport> logger, 
                                     ServerSettingsRepository serverSettingsRepository,
                                     CosmosDBRepository<CalendarItem> cosmosRepository,
                                     CosmosDBRepository<Participant> participantRepository,
@@ -41,7 +41,7 @@ namespace MeetUpPlanner.Functions
         [OpenApiOperation(Summary = "Export a list of participants of the given user sharing rides",
                           Description = "All CalendarItems still in database are scanned for participants who had shared an envent with the given person. To be able to read all ExtendedCalenderItems the admin keyword must be set as header x-meetup-keyword.")]
         [OpenApiRequestBody("application/json", typeof(TrackingReportRequest), Description = "Holds all information needed to assemble a tracking report")]
-        [OpenApiResponseBody(System.Net.HttpStatusCode.OK, "application/json", typeof(TrackingReport))]
+        [OpenApiResponseWithBody(System.Net.HttpStatusCode.OK, "application/json", typeof(TrackingReport))]
         public async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req)
         {
@@ -75,11 +75,11 @@ namespace MeetUpPlanner.Functions
             IEnumerable<CalendarItem> rawListOfCalendarItems;
             if (null == tenant)
             { 
-                rawListOfCalendarItems = await _cosmosRepository.GetItems(d => (d.Tenant ?? String.Empty) == String.Empty);
+                rawListOfCalendarItems = await _cosmosRepository.GetItems(d => (d.Tenant ?? String.Empty) == String.Empty && !d.IsCanceled);
             }
             else
             {
-                rawListOfCalendarItems = await _cosmosRepository.GetItems(d => d.Tenant.Equals(tenant));
+                rawListOfCalendarItems = await _cosmosRepository.GetItems(d => d.Tenant.Equals(tenant) && !d.IsCanceled);
             }
             List<ExtendedCalendarItem> resultCalendarItems = new List<ExtendedCalendarItem>(50);
             // Filter the CalendarItems that are relevant
@@ -88,7 +88,7 @@ namespace MeetUpPlanner.Functions
                 // Read all participants for this calendar item
                 IEnumerable<Participant> participants = await _participantRepository.GetItems(p => p.CalendarItemId.Equals(item.Id));
                 // Only events where the person was part of will be used.
-                if (item.EqualsHost(trackingRequest.TrackFirstName, trackingRequest.TrackLastName) || null != participants.Find(trackingRequest.TrackFirstName, trackingRequest.TrackLastName))
+                if (!item.WithoutHost && item.EqualsHost(trackingRequest.TrackFirstName, trackingRequest.TrackLastName) || null != participants.Find(trackingRequest.TrackFirstName, trackingRequest.TrackLastName))
                 {
                     ExtendedCalendarItem extendedItem = new ExtendedCalendarItem(item);
                     extendedItem.ParticipantsList = participants;
@@ -113,7 +113,10 @@ namespace MeetUpPlanner.Functions
             int calendarIndex = 0;
             foreach (ExtendedCalendarItem calendarItem in orderedList)
             {
-                report.CompanionList.AddCompanion(calendarItem.HostFirstName, calendarItem.HostLastName, calendarItem.HostAdressInfo, calendarSize, calendarIndex);
+                if (!calendarItem.WithoutHost)
+                {
+                    report.CompanionList.AddCompanion(calendarItem.HostFirstName, calendarItem.HostLastName, calendarItem.HostAdressInfo, calendarSize, calendarIndex);
+                }
                 foreach (Participant p in calendarItem.ParticipantsList)
                 {
                     report.CompanionList.AddCompanion(p.ParticipantFirstName, p.ParticipantLastName, p.ParticipantAdressInfo, calendarSize, calendarIndex);

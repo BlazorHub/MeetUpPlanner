@@ -20,23 +20,41 @@ namespace MeetUpPlanner.Shared
         public string AuthorLastName { get; set; }
         [JsonProperty(PropertyName = "commentDate")]
         public DateTime CommentDate { get; set; }
-        [JsonProperty(PropertyName = "comment"), MaxLength(200, ErrorMessage = "Kommentar zu lang.")]
+        [JsonProperty(PropertyName = "comment"), MaxLength(250, ErrorMessage = "Kommentar zu lang.")]
         public string Comment { get; set; }
-        [JsonIgnore]
-        public string AuthorDisplayName
+        [JsonProperty(PropertyName = "link", NullValueHandling = NullValueHandling.Ignore), MaxLength(200, ErrorMessage = "Link zu lang.")]
+        public string Link { get; set; }
+        [JsonProperty(PropertyName = "linkTitle", NullValueHandling = NullValueHandling.Ignore), MaxLength(80, ErrorMessage = "Link-Titel zu lang.")]
+        public string LinkTitle { get; set; }
+        public string AuthorDisplayName(int nameDisplayLength)
         {
-            get
+            if (null == AuthorFirstName) AuthorFirstName = String.Empty;
+            if (null == AuthorLastName) AuthorLastName = String.Empty;
+            StringBuilder sb = new StringBuilder();
+            sb.Append(AuthorFirstName).Append(' ');
+            int length = nameDisplayLength > 0 ? Math.Min(nameDisplayLength, AuthorLastName.Length) : AuthorLastName.Length;
+            sb.Append(AuthorLastName.Substring(0, length));
+            if (length < AuthorLastName.Length)
             {
-                if (null == AuthorFirstName) AuthorFirstName = String.Empty;
-                if (null == AuthorLastName) AuthorLastName = " ";
-                return AuthorFirstName + " " + AuthorLastName[0] + ".";
+                sb.Append('.');
             }
+            return sb.ToString();
         }
+        [JsonIgnore]
         public string DisplayDate
         {
             get
             {
-                return (null != CommentDate) ? CommentDate.ToString("dd.MM HH:mm") : String.Empty;
+                return (null != CommentDate) ? CommentDate.ToString("dd.MM. HH:mm") : String.Empty;
+            }
+        }
+        [JsonIgnore]
+
+        public string DisplayLinkTitle
+        {
+            get
+            {
+                return String.IsNullOrEmpty(LinkTitle) ? "Link ..." : LinkTitle;
             }
         }
 

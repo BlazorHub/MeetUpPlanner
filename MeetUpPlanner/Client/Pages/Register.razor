@@ -5,28 +5,12 @@
 @inject NavigationManager NavigationManager
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject NotificationService notificationService
+@implements IDisposable
 @using Newtonsoft.Json
 @using Microsoft.AspNetCore.SignalR.Client
 
 
-<div class="jumbotron">
-    <h6 class="text-muted">@meetup.LevelDescription - @meetup.Tempo</h6>
-    <h4>@meetup.GetStartDateAsString() - @meetup.Title</h4>
-    @if (!String.IsNullOrEmpty(meetup.Link))
-    {
-        <h6><small><a href="@meetup.Link" target="_blank">@meetup.Link</a></small></h6>
-    }
-    <p class="lead">
-        @((MarkupString)meetup.Summary)
-    </p>
-    <p>
-        <small>@(meetup.MaxRegistrationsCount - meetup.ParticipantCounter) von @meetup.MaxRegistrationsCount Plätzen noch frei.</small>
-    </p>
-    <p>
-        Für die Teilnahme an der Ausfahrt bitte die Kontaktdaten unten eingeben, um damit die Nachverfolgbarkeit zu gewährleisten. Falls du doch nicht
-        dabei sein kannst, kannst du dich über diese Seite auch wieder abmelden.
-    </p>
-</div>
+<MeetUp CalendarItem="@meetup" HideParticipants="true" NameDisplayLength="@AppStateStore.ClientSettings.NameDisplayLength" AdditionalText="Für die Teilnahme an der Ausfahrt bitte die Kontaktdaten unten eingeben, um damit die Nachverfolgbarkeit zu gewährleisten. Falls du doch nicht dabei sein kannst, kannst du dich über diese Seite auch wieder abmelden." />
 
 <EditForm OnValidSubmit="RegisterGuest" Model="@_guest">
     <DataAnnotationsValidator />
@@ -35,7 +19,7 @@
     <div class="form-row">
         <div class="form-group col-md-12">
             <small id="nameHelp" class="form-text text-muted">
-                Zur eindeutigen Nachverfolgbarkeit bitte Vor- und Nachname eingeben. In der Teilnehmerliste der Ausfahrten werden nur die Vornamen angezeigt.
+                Zur eindeutigen Nachverfolgbarkeit bitte Vor- und Nachname eingeben.
             </small>
         </div>
     </div>
@@ -97,10 +81,8 @@
     }
 
 
-
     protected override async Task OnInitializedAsync()
     {
-        AppStateStore.ClientSettings = new ClientSettings();
         if (await LocalStorage.ContainKeyAsync(PERM_STORAGE))
         {
             // Read the user data if available from browser storage
@@ -111,9 +93,16 @@
             _guest.ParticipantAdressInfo = permAppState.PhoneMail;
         }
         // Get client settings from server
-        AppStateStore.Tenant = TenantConfig.GetTenant(NavigationManager.BaseUri);
         PrepareHttpClient();
-        AppStateStore.ClientSettings = await Http.GetFromJsonAsync<ClientSettings>("Util/clientsettings");
+        TenantClientSettings tenantClientSettings = await Http.GetFromJsonAsync<TenantClientSettings>("Util/tenantclientsettings");
+        AppStateStore.Tenant = tenantClientSettings.Tenant;
+        AppStateStore.ClientSettings = tenantClientSettings.Client;
+        if (AppStateStore.Tenant.IsLocked || AppStateStore.ClientSettings.AppLocked)
+        {
+            // Application locked ==> navigate to start page
+            NavigationManager.NavigateTo("/");
+            return;
+        }
         await ReadData();
         hubConnection = new HubConnectionBuilder()
              .WithUrl(NavigationManager.ToAbsoluteUri("/broadcastHub"))
@@ -127,7 +116,7 @@
     {
         // Get referenced calendar item
         meetup = await Http.GetFromJsonAsync<ExtendedCalendarItem>($"Calendar/extendedcalendaritemforguest?itemId={ItemId}");
-        if (meetup.StartDate.CompareTo(DateTime.Now.AddHours(-8)) < 0)
+        if (meetup.StartDate.CompareTo(DateTime.Now.AddHours(-13)) < 0)
         {
             // MeetUp too old ==> navigate to start page
             NavigationManager.NavigateTo("/");
@@ -155,12 +144,17 @@
         {
             await LocalStorage.RemoveItemAsync(PERM_STORAGE);
         }
-        _guest.IsGuest = true;
+        _guest.IsGuest = !AppStateStore.Tenant.GuestNameShown;
         _guest.CalendarItemId = ItemId;
         BackendResult result;
         Participant participant = meetup.FindParticipant(_guest.ParticipantFirstName, _guest.ParticipantLastName);
         if (null == participant)
         {
+            if (meetup.IsCanceled)
+            {
+                notificationService.Notify(new NotificationMessage() { Severity = NotificationSeverity.Warning, Summary = "Abgesagt", Detail = "Der Termin ist leider abgesagt.", Duration = 4000 });
+                return;
+            }
             PrepareHttpClient();
             HttpResponseMessage response = await Http.PostAsJsonAsync<Participant>($"Calendar/addguest", _guest);
             string responseBody = await response.Content.ReadAsStringAsync();
@@ -175,7 +169,7 @@
         else
         {
             PrepareHttpClient();
-            HttpResponseMessage response = await Http.PostAsJsonAsync<Participant>($"Calendar/removeguest?", participant);
+            HttpResponseMessage response = await Http.PostAsJsonAsync<Participant>($"Calendar/removeguest", participant);
             string responseBody = await response.Content.ReadAsStringAsync();
 
             result = JsonConvert.DeserializeObject<BackendResult>(responseBody);
@@ -201,9 +195,14 @@
         {
             if (!Http.DefaultRequestHeaders.Contains("x-meetup-tenant"))
             {
-                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.Name);
+                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.PrimaryUrl);
             }
         }
+        if (!Http.DefaultRequestHeaders.Contains("x-meetup-tenant-url"))
+        {
+            Http.DefaultRequestHeaders.Add("x-meetup-tenant-url", NavigationManager.BaseUri);
+        }
+
     }
 
     Task SendMessage() => hubConnection.SendAsync("SendMessage");
@@ -212,7 +211,10 @@
 
     public void Dispose()
     {
-        _ = hubConnection.DisposeAsync();
+        if (null != hubConnection)
+        {
+            _ = hubConnection.DisposeAsync();
+        }
     }
 
 }

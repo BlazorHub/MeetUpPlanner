@@ -1,0 +1,118 @@
+﻿@page "/infocomment/{ItemId}"
+@inject HttpClient Http
+@inject AppState AppStateStore
+@inject NavigationManager NavigationManager
+@implements IDisposable
+@using MeetUpPlanner.Shared
+@using Newtonsoft.Json
+@using Microsoft.AspNetCore.SignalR.Client
+
+<InfoSummary InfoItem="@infoItem" AdditionalText="@lifetimeHint" />
+<AddComment OnSaveComment="SaveComment" OnCancel="OnCancel" EnableLink="true"></AddComment>
+<hr />
+<CommentsList Comments="@infoItem.CommentsList" OnRemoveComment="RemoveComment" NameDisplayLength="@AppStateStore.ClientSettings.NameDisplayLength"></CommentsList>
+
+
+@code {
+    [Parameter]
+    public string ItemId { get; set; }
+    ExtendedInfoItem infoItem = new ExtendedInfoItem();
+    string logMessage;
+    private HubConnection hubConnection;
+    private string lifetimeHint = String.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!String.IsNullOrEmpty(AppStateStore?.KeyWord))
+        {
+            hubConnection = new HubConnectionBuilder()
+                 .WithUrl(NavigationManager.ToAbsoluteUri("/broadcastHub"))
+                 .WithAutomaticReconnect()
+                 .Build();
+            await hubConnection.StartAsync();
+
+            await ReadData();
+            if (infoItem.CommentsLifeTimeInDays > 0)
+            {
+                lifetimeHint = $"Die Kommentare für dieses Thema werden nach {infoItem.CommentsLifeTimeInDays} Tagen automatisch gelöscht.";
+            }
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task ReadData()
+    {
+        PrepareHttpClient();
+        // Get referenced info item
+        infoItem = await Http.GetFromJsonAsync<ExtendedInfoItem>($"api/info/extendedinfoitem?itemId={ItemId}");
+    }
+
+    private async Task SaveComment(CalendarComment comment)
+    {
+        string keyword = AppStateStore.KeyWord;
+        // Save Comment to server
+        comment.CalendarItemId = infoItem.Id;
+        comment.AuthorFirstName = AppStateStore.FirstName;
+        comment.AuthorLastName = AppStateStore.LastName;
+        if (!String.IsNullOrEmpty(comment.Comment) || !String.IsNullOrEmpty(comment.Link))
+        {
+            PrepareHttpClient();
+            await Http.PostAsJsonAsync<CalendarComment>($"api/info/addcomment", comment);
+            if (IsConnected) await SendMessage();
+        }
+
+        NavigationManager.NavigateTo("/calendar");
+    }
+
+
+    protected void OnCancel()
+    {
+        NavigationManager.NavigateTo("/calendar");
+    }
+
+    protected async Task RemoveComment(CalendarComment c)
+    {
+        PrepareHttpClient();
+        HttpResponseMessage response = await Http.PostAsJsonAsync<CalendarComment>($"Calendar/removecomment", c);
+        string responseBody = await response.Content.ReadAsStringAsync();
+
+        BackendResult result = JsonConvert.DeserializeObject<BackendResult>(responseBody);
+        if (result.Success)
+        {
+            if (IsConnected) await SendMessage();
+            await ReadData();
+        }
+        else
+        {
+            logMessage = result.Message;
+        }
+    }
+
+    Task SendMessage() => hubConnection.SendAsync("SendMessage");
+
+    public bool IsConnected => hubConnection.State == HubConnectionState.Connected;
+
+    public void Dispose()
+    {
+        _ = hubConnection.DisposeAsync();
+    }
+
+    private void PrepareHttpClient()
+    {
+        if (null != AppStateStore.Tenant?.TenantKey)
+        {
+            if (!Http.DefaultRequestHeaders.Contains("x-meetup-tenant"))
+            {
+                Http.DefaultRequestHeaders.Add("x-meetup-tenant", AppStateStore.Tenant.TenantKey);
+            }
+        }
+        if (!Http.DefaultRequestHeaders.Contains("x-meetup-keyword"))
+        {
+            Http.DefaultRequestHeaders.Add("x-meetup-keyword", AppStateStore.KeyWord);
+        }
+
+    }
+}

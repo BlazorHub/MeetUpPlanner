@@ -1,7 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +39,20 @@ namespace MeetUpPlanner.Server.Controllers
         public async Task<IActionResult> GetExtendedCalendarItems([FromHeader(Name = "x-meetup-tenant")] string tenant, [FromHeader(Name = "x-meetup-keyword")] string keyword, [FromQuery] string privatekeywords)
         {
             IEnumerable<ExtendedCalendarItem> calendarItems = await _meetUpFunctions.GetExtendedCalendarItems(tenant, keyword, privatekeywords);
+            return Ok(calendarItems);
+        }
+        [HttpGet("extendedcalendaritemsfordate")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetExtendedCalendarItemsForDate([FromHeader(Name = "x-meetup-tenant")] string tenant, [FromHeader(Name = "x-meetup-keyword")] string keyword, [FromQuery] string privatekeywords, [FromQuery] string requesteddate)
+        {
+            IEnumerable<ExtendedCalendarItem> calendarItems = await _meetUpFunctions.GetExtendedCalendarItemsForDate(tenant, keyword, privatekeywords, requesteddate);
+            return Ok(calendarItems);
+        }
+        [HttpGet("scopedcalendaritems")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetScopedCalendarItems([FromHeader(Name = "x-meetup-tenant")] string tenant, [FromQuery] string scope)
+        {
+            IEnumerable<ExtendedCalendarItem> calendarItems = await _meetUpFunctions.GetScopedCalendarItems(tenant, scope);
             return Ok(calendarItems);
         }
         [HttpGet("calendaritem")]

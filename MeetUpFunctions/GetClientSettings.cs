@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using MeetUpPlanner.Shared;
 using Microsoft.Extensions.Configuration;
 using MeetUpPlanner.Functions;
-using Aliencube.AzureFunctions.Extensions.OpenApi.Attributes;
+using Aliencube.AzureFunctions.Extensions.OpenApi.Core.Attributes;
 
 namespace MeetUpFunctions
 {
@@ -33,16 +33,17 @@ namespace MeetUpFunctions
         /// <returns></returns>
         [FunctionName(nameof(GetClientSettings))]
         [OpenApiOperation(Summary = "Gets the active ClientSettings", Description = "Reading the ClientSettings should be done at the very beginning of the client application.")]
-        [OpenApiResponseBody(System.Net.HttpStatusCode.OK, "application/json", typeof(ClientSettings))]
+        [OpenApiResponseWithBody(System.Net.HttpStatusCode.OK, "application/json", typeof(ClientSettings))]
         public async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = null)] HttpRequest req)
         {
-            _logger.LogInformation("C# HTTP trigger function GetClientSettings processed a request.");
             string tenant = req.Headers[Constants.HEADER_TENANT];
             if (String.IsNullOrWhiteSpace(tenant))
             {
                 tenant = null;
             }
+            string tenantBadge = null == tenant ? "default" : tenant;
+            _logger.LogInformation($"GetClientSettings<{tenantBadge}>");
             string key = Constants.KEY_CLIENT_SETTINGS;
             if (null != tenant)
             {

@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text;
-using System.ComponentModel.DataAnnotations;
 using Newtonsoft.Json;
-using System.Data;
 
 namespace MeetUpPlanner.Shared
 {
@@ -30,42 +27,52 @@ namespace MeetUpPlanner.Shared
             this.Id = calendarItem.Id;
             this.Title = calendarItem.Title;
             this.StartDate = calendarItem.StartDate;
+            this.PublishDate = calendarItem.PublishDate;
+            this.Weekly = calendarItem.Weekly;
+            this.IsCopiedToNextWeek = calendarItem.IsCopiedToNextWeek;
             this.Place = calendarItem.Place;
+            this.DirectionsLink = calendarItem.DirectionsLink;
             this.HostFirstName = calendarItem.HostFirstName;
             this.HostLastName = calendarItem.HostLastName;
             this.HostAdressInfo = calendarItem.HostAdressInfo;
             this.Summary = calendarItem.Summary;
             this.MaxRegistrationsCount = calendarItem.MaxRegistrationsCount;
+            this.MinRegistrationsCount = calendarItem.MinRegistrationsCount;
             this.PrivateKeyword = calendarItem.PrivateKeyword;
             this.LevelDescription = calendarItem.LevelDescription;
             this.Tempo = calendarItem.Tempo;
             this.Link = calendarItem.Link;
+            this.LinkTitle = calendarItem.LinkTitle;
             this.ParticipantsList = new List<Participant>();
             this.CommentsList = new List<CalendarComment>();
             this.IsCross = calendarItem.IsCross;
+            this.IsCanceled = calendarItem.IsCanceled;
             this.Tenant = calendarItem.Tenant;
+            this.WithoutHost = calendarItem.WithoutHost;
+            this.GuestScope = calendarItem.GuestScope;
         }
 
-        [JsonIgnore]
-        public string ParticipantsDisplay
+        public string ParticipantsDisplay(int nameDisplayLength)
         {
-            get 
+            StringBuilder sb = new StringBuilder(100);
+            int counter = WithoutHost ? 0 : 1;
+            foreach (Participant participant in this.ParticipantsList)
             {
-                StringBuilder sb = new StringBuilder(100);
-                foreach (Participant participant in this.ParticipantsList)
-                {
+                if (counter > 0)
+                { 
                     sb.Append(", ");
-                    sb.Append(participant.ParticipantDisplayName);
                 }
-                return sb.ToString();
+                sb.Append(participant.ParticipantDisplayName(nameDisplayLength));
+                ++counter;
             }
+            return sb.ToString();
         }
         [JsonIgnore]
         public int ParticipantCounter
         {
             get
             {
-                int counter = 1;
+                int counter = WithoutHost ? 0 : 1;
                 foreach (Participant p in ParticipantsList)
                 {
                     ++counter;

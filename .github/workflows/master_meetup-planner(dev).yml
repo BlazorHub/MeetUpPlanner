@@ -8,12 +8,12 @@ on:
     branches:
       - master
     paths:
-      - 'MeetUpPlanner/**'
+     - 'MeetUpPlanner/**'
 
 defaults:
   run:
     working-directory: MeetUpPlanner/Server
-
+    
 jobs:
   build-and-deploy:
     runs-on: windows-latest
@@ -24,18 +24,18 @@ jobs:
     - name: Set up .NET Core
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: '3.1.102'
+        dotnet-version: '5.0.x'
 
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
     - name: dotnet publish
-      run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
+      run: dotnet publish -c Release -o /myapp
 
     - name: Deploy to Azure Web App
-      uses: azure/webapps-deploy@v1
+      uses: azure/webapps-deploy@v2
       with:
-        app-name: 'meetup-planner(dev)'
+        app-name: 'meetup-planner'
         slot-name: 'dev'
-        publish-profile: ${{ secrets.AzureAppService_PublishProfile_0a92a039d2a243c584e1c50ff892dc7e }}
-        package: ${{env.DOTNET_ROOT}}/myapp 
+        publish-profile: ${{ secrets.AzureAppService_PublishProfile_0fb7a56b5b13467f88fa3b2b71770716 }}
+        package: /myapp 

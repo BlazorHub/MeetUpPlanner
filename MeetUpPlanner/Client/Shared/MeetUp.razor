@@ -1,21 +1,61 @@
 ﻿@using MeetUpPlanner.Shared
 <div class="jumbotron">
     <h6 class="text-muted">@CalendarItem.LevelDescription - @CalendarItem.Tempo</h6>
-    <h3>@CalendarItem.GetStartDateAsString() - @CalendarItem.Title</h3>
+    <h3>
+        @CalendarItem.GetStartDateAsString() - @CalendarItem.Title
+        @if (CalendarItem.IsCanceled)
+        {
+            <span class="badge badge-danger" title="Abgesagt">Abgesagt!</span>
+        }
+    </h3>
+    <h6>
+        @CalendarItem.Place
+        @if (!String.IsNullOrEmpty(CalendarItem.DirectionsLink))
+        {
+            <a href="@CalendarItem.DirectionsLink" class="btn btn-outline-success btn-sm" role="button" target="_blank" tite="Startort"><span class="oi oi-map-marker"></span></a>
+        }
+    </h6>
     @if (!String.IsNullOrEmpty(CalendarItem.Link))
     {
-        <small><a href="@CalendarItem.Link" target="_blank">@CalendarItem.Link</a></small>
+        <a href="@CalendarItem.Link" target="_blank">@CalendarItem.DisplayLinkTitle</a>
     }
     <p>
         @((MarkupString)CalendarItem.Summary)
     </p>
     <p>
-        <small>Dabei (@CalendarItem.ParticipantCounter von @CalendarItem.MaxRegistrationsCount): <b>@CalendarItem.HostDisplayName</b>@CalendarItem.ParticipantsDisplay</small>
+        @if (!HideParticipants)
+        {
+            <small>Dabei (@CalendarItem.ParticipantCounter von @CalendarItem.MaxRegistrationsCount)</small>
+            @if (CalendarItem.ParticipantCounter < CalendarItem.MinRegistrationsCount)
+            {
+                <span class="badge badge-danger" title="Mindestteilnehmerzahl">Min @CalendarItem.MinRegistrationsCount</span>
+            }
+            <small>: <b>@CalendarItem.HostDisplayName(NameDisplayLength)</b>@CalendarItem.ParticipantsDisplay(NameDisplayLength)</small>
+        }
+        else
+        {
+            <small>@(CalendarItem.MaxRegistrationsCount - CalendarItem.ParticipantCounter) von @CalendarItem.MaxRegistrationsCount Plätzen noch frei.</small>
+            @if (CalendarItem.ParticipantCounter < CalendarItem.MinRegistrationsCount)
+            {
+                <span class="badge badge-danger" title="Mindestteilnehmerzahl">Min @CalendarItem.MinRegistrationsCount</span>
+            }
+        }
     </p>
+    @if (!String.IsNullOrEmpty(AdditionalText))
+    {
+        <p>
+            @AdditionalText
+        </p>
+    }
 </div>
 
 @code {
     [Parameter]
     public ExtendedCalendarItem CalendarItem { get; set; } = new ExtendedCalendarItem();
-
+    [Parameter]
+    public Boolean HideParticipants { get; set; } = false;
+    [Parameter]
+    public String AdditionalText { get; set; } = null;
+    [Parameter]
+    public int NameDisplayLength { get; set; } = 1;
 }
